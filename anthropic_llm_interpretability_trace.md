@@ -31,7 +31,7 @@ Transformer 的 MLP 层神经元常呈现“多义性”（polysemanticity）：
 
 **方法论**
 
-- **SoLU 定义**：对向量 \(x\) 的每个分量执行 \text{SoLU}(x) = x \odot \text{softmax}(x)（分量与其 softmax 权重相乘）。
+- **SoLU 定义**：对向量 x 的每个分量执行 **SoLU(x) = x ⊙ softmax(x)**（其中 ⊙ 表示逐元素乘；softmax 在该层神经元维度上计算）。
 - 在语言建模小模型上**直接替换 GeLU/ReLU 为 SoLU**，比较可解释性与困惑度。
 - 人工与半自动评估：抽取神经元最高激活样本，判断是否存在**单一、稳定的语义**。
 
