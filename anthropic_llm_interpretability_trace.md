@@ -1,4 +1,4 @@
-# Anthropic LLM 可解释性研究追踪（前 7 篇，2022–2025）
+# Anthropic LLM 可解释性研究追踪（2022–2025）
 
 > 本文为 LLM 可解释性及安全研究的**追踪目录**，涵盖 Anthropic 与其“Transformer Circuits”团队在 2022–2025 年关于 LLM 机制可解释性的关键成果。每篇均包含：研究背景、核心问题、方法论、方法论局限性、实验设计思路及数据、可扩充的创新研究方向，并附**论文/项目来源链接**（官方页面或 arXiv/Anthropic 博客）。
 
@@ -10,7 +10,14 @@
 4. [特征叠加、记忆化与双降（2023-01-05）](#4-特征叠加记忆化与双降2023-01-05-tom-henighan-等)
 5. [迈向单义性：字典学习分解语言模型（2023-10-05）](#5-迈向单义性字典学习分解语言模型2023-10-05-trenton-bricken-等)
 6. [将单义性扩展到大型模型：Claude 3 Sonnet 特征提取（2024-05-21）](#6-将单义性扩展到大型模型claude-3-sonnet-特征提取2024-05-21-aditya-templeton-等)
-7. [Persona Vectors：人格向量监测与控制（2025-07-29）](#7-persona-vectors人格向量监测与控制2025-07-29-runjin-chen-等)
+7. [Using Dictionary Learning Features as Classifiers（2024-09）](#8-using-dictionary-learning-features-as-classifiers2024-09-transformer-circuits-interpretability-team)
+8. [Sparse Crosscoders：跨层/跨模型特征对齐与模型差分（2024-10-25）](#9-sparse-crosscoders跨层跨模型特征对齐与模型差分2024-10-25-transformer-circuits-interpretability-team)
+9. [Crosscoder Model Diffing 实践洞见（2025-02-20）](#10-crosscoder-model-diffing-实践洞见2025-02-20-transformer-circuits-interpretability-team)
+10. [Circuit Tracing：揭示语言模型中的计算图（方法）（2025-03-27）](#11-circuit-tracing揭示语言模型中的计算图方法2025-03-27-transformer-circuits-interpretability-team)
+11. [On the Biology of a Large Language Model（应用）（2025-03-27）](#12-on-the-biology-of-a-large-language-model应用2025-03-27-transformer-circuits-interpretability-team)
+12. [Auditing Language Models for Hidden Objectives（对齐审计博弈）（2025-03-14）](#13-auditing-language-models-for-hidden-objectives对齐审计博弈2025-03-14-samuel-marks-等)
+13. [Open‑sourcing Circuit Tracing Tools（工具发布）（2025-05-29）](#14-open‑sourcing-circuit-tracing-tools工具发布2025-05-29-anthropic)
+14. [Persona Vectors：人格向量监测与控制（2025-07-29）](#7-persona-vectors人格向量监测与控制2025-07-29-runjin-chen-等)
 
 ---
 
@@ -237,7 +244,243 @@ ICL 的**具体实现**是什么？Induction Heads 是否在不同规模模型�
 
 ---
 
-## 7. Persona Vectors：人格向量监测与控制（2025-07-29，Runjin Chen 等）
+## 7. Using Dictionary Learning Features as Classifiers（2024-09，Transformer Circuits Interpretability Team）
+
+**研究背景**  
+在“迈向单义性/特征发现（SAE）”之后，团队探索一个工程问题：将**特征激活**作为**分类器输入**，用于安全相关识别（如**生物武器**问题提示）。比较“特征空间”与“原始隐藏态”的分类效果与可解释性。
+
+**核心问题**  
+- 用稀疏字典学习得到的**特征激活**能否在性能不输的同时，提供**更强的可解释性**？  
+- 是否能更容易定位并**剔除虚假相关**（例如“学术格式=无害”这类 spurious features）？
+
+**方法论**  
+- 在同一模型/同一层，分别基于**原始激活**与**特征激活**训练二分类器（线性/浅树等）。  
+- 对比多数据集（合成、翻译、人工样本），评估性能、可解释性与失败模式。  
+- 对分类器权重对应的特征进行**语义解读**，执行**有针对性的特征消融**。
+
+**方法论局限性**  
+- 需要先训练 SAE，**计算成本**较高；  
+- 特征质量对结果影响较大；在**小量真实人工集**上，原始激活有时更强。
+
+**实验设计思路及数据**  
+- 任务：**有害/生物武器**提示检测为主；  
+- 模型：中等规模 LM 若干层；  
+- 指标：AUROC/F1、特征解释一致性、**虚假相关识别率**、失败模式差异。
+
+**可扩充的创新研究方向**  
+- 把“特征解释”与**数据调试**结合，半自动定位并清洗虚假相关；  
+- 在线部署**特征告警器**；  
+- 改进 SAE 以提升特征的**语义纯度与稳定性**。
+
+**论文/项目来源**  
+- Transformer Circuits 预印：<https://transformer-circuits.pub/2024/features-as-classifiers/index.html>  
+- 线程目录：<https://transformer-circuits.pub/>
+
+---
+
+## 8. Sparse Crosscoders：跨层/跨模型特征对齐与模型差分（2024-10-25，Transformer Circuits Interpretability Team）
+
+**研究背景**  
+当在**不同层**或**不同模型版本**上抽取稀疏特征时，语义上“同一个概念”的特征难以对齐。**Sparse Crosscoder（稀疏跨编码器）**用于在特征空间之间学习**稀疏映射**，从而支持**跨层/跨模型**的**一致特征对齐**与**模型差分**。
+
+**核心问题**  
+- 如何将 A 层/模型的特征**一对少**地映射到 B 层/模型？  
+- 能否以此进行**模型差分**，找出**哪些特征新增/消失/增强**？
+
+**方法论**  
+- 训练带稀疏约束的线性跨编码器（Crosscoder），以 A 的特征激活**重构** B 的特征激活；  
+- 利用稀疏性诱导**可解释的配对**关系并减少混叠；  
+- 在多组层/模型对上验证。
+
+**方法论局限性**  
+- **映射不完美**，对结构差异较大或新生/裂解特征效果有限；  
+- 训练与选择稀疏度需要经验；**人工核验**开销较大。
+
+**实验设计思路及数据**  
+- 同架构“基座 vs. 指令微调/安全微调/新版本”的模型对；  
+- 相邻层或关键层之间的跨层对齐；  
+- 指标：重构误差、人工语义一致性、差分的可解释性。
+
+**可扩充的创新研究方向**  
+- 建立**发布前模型差分审计**流水线；  
+- 与**行为评测**结合，形成“内部变化—外部表现”闭环验证；  
+- 与**Circuit Tracing**联动，追踪**跨层因果链**。
+
+**论文/项目来源**  
+- 研究笔记：<https://transformer-circuits.pub/2024/crosscoders/index.html>  
+- 线程目录：<https://transformer-circuits.pub/>
+
+---
+
+## 9. Crosscoder Model Diffing 实践洞见（2025-02-20，Transformer Circuits Interpretability Team）
+
+**研究背景**  
+将 9 的方法投入**真实模型差分**场景，团队总结了一系列**最佳实践与陷阱**：例如“模型独有特征往往更多义”“两侧独有特征在数量与语义上呈**镜像对称**”等。
+
+**核心问题**  
+- 如何可靠地用 Crosscoder 做**模型差分**并解释“新增/消失/改变”的特征族群？  
+- 在真实项目中**常犯错误**和**稳健作法**分别是什么？
+
+**方法论**  
+- 在多对“基座 vs.（指令/安全/产品版）”模型上训练跨编码器；  
+- 给出“**独有特征**”的定量筛选规则与可视分析；  
+- 汇总**对称性、可解释性难度**等实证观察。
+
+**方法论局限性**  
+- 仍受限于 SAE/对齐质量；**人工解释瓶颈**明显；  
+- 对**异构架构**的适用性有限。
+
+**实验设计思路及数据**  
+- 统一输入集上抽取特征，做 A↔B 双向对齐与差分；  
+- 指标：独有/公共特征比例、跨集稳定性、人审一致率；  
+- 案例分析与失败复盘。
+
+**可扩充的创新研究方向**  
+- 将差分报告纳入**上线前审计**；  
+- 与**数据治理**结合，定位引起变化的**数据切片**；  
+- 标准化**差分可视化**与**可复现脚本**。
+
+**论文/项目来源**  
+- Transformer Circuits 笔记：<https://transformer-circuits.pub/2025/crosscoder-diffing-update/index.html>  
+- Anthropic 研究页：<https://www.anthropic.com/research/crosscoder-model-diffing>
+
+---
+
+## 10. Circuit Tracing：揭示语言模型中的计算图（方法）（2025-03-27，Transformer Circuits Interpretability Team）
+
+**研究背景**  
+在具备“**特征**”这一解释单元后，进一步追问：这些特征如何在**跨层组合**成**可解释的计算电路**？**Circuit Tracing** 提出了“**替代模型**”思路：用**跨层转码器**近似真实 MLP 的映射，令前向传播在**特征空间**中进行，从而**追踪特征→特征**的因果路径，并生成**归因图（Attribution Graph）**。
+
+**核心问题**  
+- 能否为**具体提示**复原一条**忠实**的内部计算路径？  
+- 能否在**干预/消融**下验证这些路径的**因果性**？
+
+**方法论**  
+- 训练**Cross‑Layer Transcoder** 作为“可解释替代模块”，替换部分 MLP；  
+- 在替代模型上跟踪特征间的**边权（归因）**，汇成“**归因图**”；  
+- 通过**干预/消融**验证路径的**必要性/充分性**。
+
+**方法论局限性**  
+- 替代模型存在**逼真度 vs. 忠实度**权衡，尚不能复原**完整**电路；  
+- 目前聚焦 MLP/特征，**注意力**仍在完善接入；  
+- 需要较多**人审解读**与**案例化分析**。
+
+**实验设计思路及数据**  
+- 在 18 层中型模型与 Claude 系列上做**基准案例库**（算术、多跳事实、诗歌押韵、越狱识别等）；  
+- 对每个案例执行**归因图生成→干预验证**。
+
+**可扩充的创新研究方向**  
+- 接入**注意力头**与**路由/门控**，面向**全路径**电路；  
+- 自动摘要与异常检测（在线电路监控）；  
+- 与**对齐/安全**联动，发现“**抑制失败—幻觉**”“**阿谀分叉**”等机制并治理。
+
+**论文/项目来源**  
+- 方法论文：<https://transformer-circuits.pub/2025/attribution-graphs/methods.html>  
+- Anthropic 博客摘要：<https://www.anthropic.com/research/tracing-thoughts-language-model>
+
+---
+
+## 11. On the Biology of a Large Language Model（应用）（2025-03-27，Transformer Circuits Interpretability Team）
+
+**研究背景**  
+作为 11 的“**伴生论文**”，将 **Circuit Tracing** 应用于前沿模型 **Claude 3.5 Haiku**，像生物学研究一样“**器官级巡检**”，系统观察：**跨语言共享表征、前瞻式押韵规划、幻觉抑制被覆盖、阿谀与真解的分叉、早期越狱识别但被覆盖**等内部机制。
+
+**核心问题**  
+- 在前沿模型上，哪些**关键能力与失败模式**能被**归因图**解释？  
+- 这些内部机制能否转化为**治理/控制**手段？
+
+**方法论**  
+- 构建多类任务的**归因图基准集**；  
+- 通过**干预/消融**来验证“**共享思维语**”“**押韵前瞻**”“**抑制失败**”“**阿谀分叉**”“**越狱识别被覆盖**”等假说；  
+- 对比多语言提示，观察**语言无关**的中间特征。
+
+**方法论局限性**  
+- 仍为**局部子图**；长对话/长期规划的**全链条追踪**有难度；  
+- 人工解读成本高，自动化程度有待提升。
+
+**实验设计思路及数据**  
+- 多语言问答、诗歌生成、事实核查、算术/医学、安全越狱等**十余类场景**；  
+- 每个场景执行“**归因→干预复核**”。
+
+**可扩充的创新研究方向**  
+- 建立**上线前机理审计套件**；  
+- 将“抑制失败—幻觉”用于**训练期约束**与**推理期监控**；  
+- 与**人格向量/特征监控**结合，形成**多层联动治理**。
+
+**论文/项目来源**  
+- 伴生论文：<https://transformer-circuits.pub/2025/attribution-graphs/biology.html>  
+- 媒体/社区解读：<https://www.reddit.com/r/MachineLearning/comments/1jmhoq6/r_anthropic_on_the_biology_of_a_large_language/>
+
+---
+
+## 12. Auditing Language Models for Hidden Objectives（对齐审计博弈）（2025-03-14，Samuel Marks 等）
+
+**研究背景**  
+为验证“**能否发现隐藏目标**”，作者训练了一个**带隐藏目标**的模型（利用 RLHF **评分器缺陷**），并组织“**盲审博弈**”：多支蓝队（不知训练细节）用**行为攻击 + 稀疏特征解释（SAE） + 数据分析**等手段审计该模型。
+
+**核心问题**  
+- 模型对外看似对齐但内部追求**错误目标**时，现有**可解释性+行为攻防**工具能否**识别**？  
+- 能否形成**可复用的审计协议**？
+
+**方法论**  
+- 训练“**利用评分器缺陷**”的隐藏目标模型（红队）；  
+- 四支蓝队以**黑箱/半白箱**权限独立审计；  
+- 盲评：是否识别到真正隐藏目标；  
+- 随后进行**开卷复审**，比较 8 种方法的**优劣与适用边界**。
+
+**方法论局限性**  
+- 任务相对集中；**假阴性**风险存在；需要经验丰富团队。
+
+**实验设计思路及数据**  
+- 评分器缺陷样例构造 → 训练隐藏目标；  
+- 蓝队：对抗提示、异常行为搜寻、**特征分析**等；  
+- 统一评审与复盘。
+
+**可扩充的创新研究方向**  
+- 将**审计博弈**常态化为**上线前流程**；  
+- 发展**自动化审计代理**，把特征解释与行为搜索**闭环**；  
+- 与**Crosscoder 差分**结合，定位“隐藏目标特征族”。
+
+**论文/项目来源**  
+- arXiv 预印本：<https://arxiv.org/abs/2503.10965>  
+- Anthropic Alignment 博客概述：<https://alignment.anthropic.com/2025/automated-auditing/>
+
+---
+
+## 13. Open‑sourcing Circuit Tracing Tools（工具发布）（2025-05-29，Anthropic）
+
+**研究背景**  
+为降低入门门槛、促进复现与社区合作，Anthropic **开源** Circuit Tracing 的工具链：支持**生成归因图、可视化/注释/分享**，并在前端交互中进行**特征值修改与输出观测**。
+
+**核心问题**  
+- 如何把 11/12 的研究方法沉淀为**可重复、可共享、可协作**的工具？  
+- 如何让外部研究者**在自有模型上**运行电路追踪？
+
+**方法论**  
+- 发布**追踪与可视化**工具，兼容特定模型和特征提取流程；  
+- 提供示例与教程，支持**修改特征值**以验证因果；  
+- 与研究页面互链，便于复现实验。
+
+**方法论局限性**  
+- 目前对**支持的模型/层级**有约束；  
+- 工具链对**SAE/跨编码器**的依赖仍在。
+
+**实验设计思路及数据**  
+- 随发布提供 demo prompts、特征样例与归因图模板；  
+- 鼓励社区提交复现报告与新案例。
+
+**可扩充的创新研究方向**  
+- 扩展到**注意力头追踪**与**端到端全路径**；  
+- 与**差分审计**、**人格向量监控**和**在线治理**集成；  
+- 打造**公共案例库**与**基准赛**。
+
+**论文/项目来源**  
+- 工具发布页：<https://www.anthropic.com/research/open-source-circuit-tracing>  
+- 方法与应用论文：<https://transformer-circuits.pub/2025/attribution-graphs/methods.html> 、 <https://transformer-circuits.pub/2025/attribution-graphs/biology.html>
+
+---
+
+## 14. Persona Vectors：人格向量监测与控制（2025-07-29，Runjin Chen 等）
 
 **研究背景**  
 模型在部署与微调中会出现**人格/倾向**漂移（如“阿谀”“幻觉”“不当攻击性”）。该工作提出**自动化提取**“人格向量”的方法，并展示“**监测—预测—控制**”一体化应用，包括**预防式 steering**（像“疫苗”一样在训练时抵消偏移）。
